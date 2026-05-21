@@ -1,18 +1,416 @@
 <!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-    <meta name="theme-color" content="#1f2937" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Cuentas Claras" />
-    <title>💰 Cuentas Claras</title>
-    <link rel="manifest" href="/manifest.json" />
-    <script src="https://cdn.tailwindcss.com"></script>
-  </head>
-  <body class="bg-gray-100">
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <meta name="theme-color" content="#1f2937"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-title" content="Cuentas Claras"/>
+  <title>💰 Cuentas Claras</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-100">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const PAYMENT_METHODS = ["—","Efectivo","Débito","Crédito","Transferencia","Débito automático"];
+const DRIVE_FOLDER_ID = "1PFwdLbr0ivJc6HMClUBQlmeXVuCk-cgA";
+
+const COLOR = {
+  blue:   { bg:"bg-blue-50",   border:"border-blue-200",   badge:"bg-blue-100 text-blue-700",   btn:"bg-blue-600 hover:bg-blue-700",   head:"bg-blue-600",   ring:"focus:ring-blue-300",   chart:"#3b82f6" },
+  teal:   { bg:"bg-teal-50",   border:"border-teal-200",   badge:"bg-teal-100 text-teal-700",   btn:"bg-teal-600 hover:bg-teal-700",   head:"bg-teal-600",   ring:"focus:ring-teal-300",   chart:"#14b8a6" },
+  purple: { bg:"bg-purple-50", border:"border-purple-200", badge:"bg-purple-100 text-purple-700",btn:"bg-purple-600 hover:bg-purple-700",head:"bg-purple-600", ring:"focus:ring-purple-300", chart:"#9333ea" },
+  pink:   { bg:"bg-pink-50",   border:"border-pink-200",   badge:"bg-pink-100 text-pink-700",   btn:"bg-pink-600 hover:bg-pink-700",   head:"bg-pink-600",   ring:"focus:ring-pink-300",   chart:"#ec4899" },
+  rose:   { bg:"bg-rose-50",   border:"border-rose-200",   badge:"bg-rose-100 text-rose-700",   btn:"bg-rose-500 hover:bg-rose-600",   head:"bg-rose-500",   ring:"focus:ring-rose-300",   chart:"#f43f5e" },
+  green:  { bg:"bg-green-50",  border:"border-green-200",  badge:"bg-green-100 text-green-700",  btn:"bg-green-600 hover:bg-green-700", head:"bg-green-600",  ring:"focus:ring-green-300",  chart:"#22c55e" },
+  orange: { bg:"bg-orange-50", border:"border-orange-200", badge:"bg-orange-100 text-orange-700",btn:"bg-orange-500 hover:bg-orange-600",head:"bg-orange-500", ring:"focus:ring-orange-300", chart:"#f97316" }
+};
+
+const SECTIONS = [
+  { id:"mvd",     label:"Casa Montevideo",     icon:"🏠", color:"blue",   defaults:["Luz","Agua","Tributos domiciliarios","Internet","Jardinero","Comida Tango y Chinita","Alquiler"] },
+  { id:"pta",     label:"Casa Punta Colorada", icon:"🌊", color:"teal",   defaults:["Luz","Agua","Tributos domiciliarios","Piscinero","Jardinero"] },
+  { id:"gonzalo", label:"Gastos de Gonzalo",   icon:"👤", color:"purple", defaults:["Seguro auto","Patente","Teléfono","Comida","Salidas","Ropa","Cochera"] },
+  { id:"andrea",  label:"Gastos de Andrea",    icon:"👤", color:"pink",   defaults:["Seguro auto","Patente","Teléfono","Comida","Salidas","Ropa","Cochera"] },
+  { id:"sofia",   label:"Gastos de Sofía",     icon:"👶", color:"rose",   defaults:["Médico / Pediatra","Medicamentos","Ropa","Pañales","Leche / Alimentación","Juguetes / Estimulación"] },
+  { id:"ahorros", label:"Ahorros",             icon:"🐷", color:"green",  defaults:["Ahorro mensual","Fondo de emergencia","Inversión"] },
+  { id:"viajes",  label:"Viajes Familiares",   icon:"✈️", color:"orange", defaults:["Destino próximo viaje","Alojamiento","Transporte","Actividades / Paseos","Comidas en viaje"] }
+];
+
+const fmt = n => "$\u202f" + Math.round(n||0).toLocaleString("es-UY");
+const fmtK = n => { if(!n) return "—"; return n>=1000?"$"+(n/1000).toFixed(1)+"k":fmt(n); };
+const now = new Date();
+
+function makeDefaultItems(sec) {
+  return sec.defaults.map((name,i)=>({ id:sec.id+"_"+i, name, amount:"", dueDate:"", note:"", payMethod:"—", provider:"", invoiceNum:"", installments:"", recurring:true, paid:false, splitPct:50, receiptUrl:"", receiptName:"" }));
+}
+function loadStorage() {
+  try { const r=localStorage.getItem("cc_v8"); return r?JSON.parse(r):null; } catch { return null; }
+}
+function saveStorage(data,nav,budgets) {
+  try { localStorage.setItem("cc_v8",JSON.stringify({data,nav,budgets})); } catch {}
+}
+function dueBadge(dueDate,paid) {
+  if(!dueDate||paid) return null;
+  const today=new Date(); today.setHours(0,0,0,0);
+  const due=new Date(dueDate+"T00:00:00");
+  const diff=Math.round((due-today)/86400000);
+  if(diff<0)   return {label:`Venció hace ${Math.abs(diff)}d`,cls:"bg-red-100 text-red-700 border border-red-200"};
+  if(diff===0) return {label:"⚠️ Vence hoy",cls:"bg-orange-100 text-orange-700 border border-orange-200"};
+  if(diff<=3)  return {label:`⏰ ${diff}d`,cls:"bg-yellow-100 text-yellow-700 border border-yellow-200"};
+  if(diff<=7)  return {label:`📅 ${diff}d`,cls:"bg-blue-50 text-blue-600 border border-blue-200"};
+  return {label:due.toLocaleDateString("es-UY",{day:"2-digit",month:"2-digit"}),cls:"bg-gray-100 text-gray-500"};
+}
+function sortByDue(items) {
+  return [...items].sort((a,b)=>{
+    if(a.paid&&!b.paid) return 1; if(!a.paid&&b.paid) return -1;
+    if(!a.dueDate&&!b.dueDate) return 0; if(!a.dueDate) return 1; if(!b.dueDate) return -1;
+    return new Date(a.dueDate)-new Date(b.dueDate);
+  });
+}
+function getLastMonths(nav,n=6) {
+  const r=[]; let {month,year}=nav;
+  for(let i=0;i<n;i++){ r.unshift({month,year,key:`${year}_${month}`}); month--; if(month<0){month=11;year--;} }
+  return r;
+}
+
+function PieChart({data,size=140}) {
+  const total=data.reduce((s,d)=>s+d.value,0);
+  if(!total) return <div style={{width:size,height:size}} className="flex items-center justify-center text-gray-300 text-xs">Sin datos</div>;
+  let angle=0;
+  const slices=data.filter(d=>d.value>0).map(d=>{ const pct=d.value/total; const start=angle; angle+=pct*360; return {...d,pct,start,end:angle}; });
+  const polar=(cx,cy,r,deg)=>{ const rad=(deg-90)*Math.PI/180; return [cx+r*Math.cos(rad),cy+r*Math.sin(rad)]; };
+  const cx=size/2,cy=size/2,r=size/2-4,ri=r*0.5;
+  return (
+    <svg width={size} height={size}>
+      {slices.map((s,i)=>{ const [x1,y1]=polar(cx,cy,r,s.start); const [x2,y2]=polar(cx,cy,r,s.end); const [ix1,iy1]=polar(cx,cy,ri,s.start); const [ix2,iy2]=polar(cx,cy,ri,s.end); const large=s.pct>0.5?1:0; return <path key={i} d={`M${ix1},${iy1} L${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} L${ix2},${iy2} A${ri},${ri} 0 ${large},0 ${ix1},${iy1}`} fill={s.color} stroke="white" strokeWidth="1.5"/>; })}
+      <text x={cx} y={cy-6} textAnchor="middle" fontSize="10" fill="#6b7280">Total</text>
+      <text x={cx} y={cy+8} textAnchor="middle" fontSize="11" fontWeight="bold" fill="#1f2937">{fmtK(total)}</text>
+    </svg>
+  );
+}
+
+async function uploadReceiptToDrive(file, itemName, sectionLabel, monthLabel) {
+  const toBase64 = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(f); });
+  const b64 = await toBase64(file);
+  const ext = file.name.split(".").pop() || "jpg";
+  const safeName = itemName.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s]/g,"").trim();
+  const fileName = `${monthLabel} - ${sectionLabel} - ${safeName}.${ext}`;
+  const prompt = `Subí este archivo a Google Drive. Carpeta ID: ${DRIVE_FOLDER_ID}. Nombre: "${fileName}". Tipo: ${file.type||"image/jpeg"}. Base64: ${b64}. Devolveme SOLO el link https://drive.google.com/file/d/FILE_ID/view`;
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000,
+      mcp_servers:[{ type:"url", url:"https://drivemcp.googleapis.com/mcp/v1", name:"google-drive" }],
+      messages:[{ role:"user", content: prompt }] })
+  });
+  const data = await resp.json();
+  const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
+  const match = text.match(/https:\/\/drive\.google\.com\/file\/d\/[^/\s]+\/view/);
+  if(match) return { url: match[0], name: fileName };
+  throw new Error("No se pudo subir el archivo.");
+}
+
+function App() {
+  const stored=loadStorage();
+  const [nav,setNav]=useState(stored?.nav||{month:now.getMonth(),year:now.getFullYear()});
+  const [allData,setAllData]=useState(stored?.data||{});
+  const [budgets,setBudgets]=useState(stored?.budgets||{});
+  const [newItem,setNewItem]=useState({});
+  const [view,setView]=useState("gastos");
+  const [collapsed,setCollapsed]=useState({});
+  const [expandedItem,setExpandedItem]=useState(null);
+  const [toast,setToast]=useState(null);
+  const [trendMonths,setTrendMonths]=useState(6);
+  const [search,setSearch]=useState("");
+  const [editBudget,setEditBudget]=useState(null);
+  const [uploading,setUploading]=useState({});
+
+  const key=`${nav.year}_${nav.month}`;
+  const monthLabel=`${MONTHS[nav.month]} ${nav.year}`;
+
+  useEffect(()=>{
+    setAllData(prev=>{
+      if(prev[key]) return prev;
+      const prevKey=nav.month===0?`${nav.year-1}_11`:`${nav.year}_${nav.month-1}`;
+      const prevData=prev[prevKey];
+      const nd={};
+      SECTIONS.forEach(s=>{ nd[s.id]=prevData?.[s.id]?prevData[s.id].filter(it=>it.recurring).map(it=>({...it,paid:false,dueDate:"",amount:"",note:"",invoiceNum:"",receiptUrl:"",receiptName:""})):makeDefaultItems(s); });
+      return {...prev,[key]:nd};
+    });
+  },[key]);
+
+  useEffect(()=>{ saveStorage(allData,nav,budgets); },[allData,nav,budgets]);
+
+  function showToast(msg,dur=2200){ setToast(msg); setTimeout(()=>setToast(null),dur); }
+
+  const monthData=allData[key]||{};
+  const getItems=id=>monthData[id]||[];
+  function updateItems(secId,items){ setAllData(prev=>({...prev,[key]:{...prev[key],[secId]:items}})); }
+
+  function togglePaid(s,id){
+    const items=getItems(s); const it=items.find(i=>i.id===id);
+    updateItems(s,items.map(i=>i.id===id?{...i,paid:!i.paid}:i));
+    if(!it.paid) setExpandedItem(id);
+    showToast(it.paid?`↩️ ${it.name} desmarcado`:`✅ ${it.name} pagado`);
+  }
+  const updateField=(s,id,f,v)=>updateItems(s,getItems(s).map(it=>it.id===id?{...it,[f]:v}:it));
+  const toggleRecurring=(s,id)=>updateItems(s,getItems(s).map(it=>it.id===id?{...it,recurring:!it.recurring}:it));
+  const deleteItem=(s,id)=>{ updateItems(s,getItems(s).filter(it=>it.id!==id)); showToast("🗑️ Eliminado"); };
+
+  function addItem(secId){
+    const n=newItem[secId]||{}; if(!n.name?.trim()) return;
+    updateItems(secId,[...getItems(secId),{id:secId+"_"+Date.now(),name:n.name.trim(),amount:n.amount||"",dueDate:n.dueDate||"",note:"",payMethod:"—",provider:"",invoiceNum:"",installments:"",recurring:n.recurring??false,paid:false,splitPct:50,receiptUrl:"",receiptName:""}]);
+    setNewItem(p=>({...p,[secId]:{}})); showToast("➕ Ítem agregado");
+  }
+
+  async function handleReceiptUpload(secId,itemId,itemName,sectionLabel,file) {
+    if(!file) return;
+    const uk=`${secId}_${itemId}`;
+    setUploading(p=>({...p,[uk]:true}));
+    showToast("📤 Subiendo a Drive...",10000);
+    try {
+      const {url,name}=await uploadReceiptToDrive(file,itemName,sectionLabel,monthLabel);
+      updateField(secId,itemId,"receiptUrl",url);
+      updateField(secId,itemId,"receiptName",name);
+      showToast("✅ Factura subida a Google Drive");
+    } catch(e){ showToast("❌ Error al subir"); }
+    finally { setUploading(p=>({...p,[uk]:false})); }
+  }
+
+  function copyFromPrevMonth(secId){
+    const prevKey=nav.month===0?`${nav.year-1}_11`:`${nav.year}_${nav.month-1}`;
+    const prevItems=allData[prevKey]?.[secId];
+    if(!prevItems?.length){ showToast("No hay datos del mes anterior"); return; }
+    const existing=getItems(secId).map(i=>i.name);
+    const toAdd=prevItems.filter(i=>!existing.includes(i.name)).map(i=>({...i,paid:false,dueDate:"",amount:"",invoiceNum:"",receiptUrl:"",receiptName:"",id:secId+"_"+Date.now()+Math.random()}));
+    if(!toAdd.length){ showToast("Ya están todos"); return; }
+    updateItems(secId,[...getItems(secId),...toAdd]); showToast(`📋 ${toAdd.length} copiados`);
+  }
+
+  function changeNav(dir){ setNav(prev=>{ let m=prev.month+dir,y=prev.year; if(m<0){m=11;y--;} if(m>11){m=0;y++;} return {month:m,year:y}; }); }
+
+  const sectionTotal=id=>getItems(id).reduce((s,it)=>s+(parseFloat(it.amount)||0),0);
+  const sectionPaid=id=>getItems(id).filter(it=>it.paid).reduce((s,it)=>s+(parseFloat(it.amount)||0),0);
+  const sectionPending=id=>getItems(id).filter(it=>!it.paid).length;
+  const grandTotal=SECTIONS.reduce((s,sec)=>s+sectionTotal(sec.id),0);
+  const grandPaid=SECTIONS.reduce((s,sec)=>s+sectionPaid(sec.id),0);
+  const grandPct=grandTotal>0?Math.round((grandPaid/grandTotal)*100):0;
+  const gonzaloTotal=sectionTotal("gonzalo"); const andreaTotal=sectionTotal("andrea");
+  const sharedTotal=["mvd","pta","sofia","ahorros","viajes"].reduce((s,id)=>s+sectionTotal(id),0);
+  const gonzaloGrand=gonzaloTotal+sharedTotal/2; const andreaGrand=andreaTotal+sharedTotal/2;
+  const urgentItems=SECTIONS.flatMap(sec=>getItems(sec.id).filter(it=>{ if(it.paid||!it.dueDate) return false; return Math.round((new Date(it.dueDate+"T00:00:00")-new Date())/86400000)<=3; }).map(it=>({...it,secIcon:sec.icon})));
+  const searchResults=useMemo(()=>{ if(!search.trim()) return []; const q=search.toLowerCase(); const results=[]; Object.entries(allData).forEach(([k,md])=>{ const [y,m]=k.split("_").map(Number); SECTIONS.forEach(sec=>{ (md[sec.id]||[]).forEach(it=>{ if(it.name.toLowerCase().includes(q)||(it.note||"").toLowerCase().includes(q)||(it.provider||"").toLowerCase().includes(q)){ results.push({...it,secLabel:sec.label,secIcon:sec.icon,monthLabel:`${MONTHS[m]} ${y}`,key:k}); } }); }); }); return results.sort((a,b)=>b.key.localeCompare(a.key)).slice(0,30); },[search,allData]);
+  const trendPeriod=getLastMonths(nav,trendMonths);
+  const trendData=trendPeriod.map(({month,year,key:k})=>{ const md=allData[k]||{}; const total=SECTIONS.reduce((s,sec)=>(md[sec.id]||[]).reduce((ss,it)=>ss+(parseFloat(it.amount)||0),s),0); const bySection={}; SECTIONS.forEach(sec=>{ bySection[sec.id]=(md[sec.id]||[]).reduce((s,it)=>s+(parseFloat(it.amount)||0),0); }); return {month,year,key:k,label:MONTHS[month].slice(0,3),total,bySection}; });
+  const maxTrend=Math.max(...trendData.map(d=>d.total),1);
+  const getBudget=id=>budgets[`${key}_${id}`]||0;
+  const setBudget=(id,val)=>setBudgets(p=>({...p,[`${key}_${id}`]:parseFloat(val)||0}));
+  const budgetStatus=id=>{ const b=getBudget(id); const t=sectionTotal(id); if(!b) return null; return {pct:Math.round((t/b)*100),over:t>b,b,t}; };
+  const pieData=SECTIONS.map(sec=>({label:sec.label,icon:sec.icon,value:sectionTotal(sec.id),color:COLOR[sec.color].chart})).filter(d=>d.value>0);
+  const isCurrentMonth=nav.month===now.getMonth()&&nav.year===now.getFullYear();
+  const projection=isCurrentMonth&&grandPaid>0?Math.round((grandPaid/now.getDate())*new Date(nav.year,nav.month+1,0).getDate()):null;
+  const toggleCollapse=id=>setCollapsed(p=>({...p,[id]:!p[id]}));
+  const toggleExpand=id=>setExpandedItem(p=>p===id?null:id);
+
+  return (
+    <div className="min-h-screen bg-gray-100 font-sans pb-10">
+      {toast&&<div className="fixed top-4 left-1/2 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-full shadow-lg" style={{transform:"translateX(-50%)"}}>{toast}</div>}
+      <div className="bg-gray-800 text-white px-4 py-4 shadow-lg">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold">💰 Cuentas Claras</h1>
+            <div className="text-right"><div className="text-xs opacity-60">Total del mes</div><div className="text-lg font-bold">{fmt(grandTotal)}</div></div>
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <button onClick={()=>changeNav(-1)} className="bg-gray-600 hover:bg-gray-500 w-8 h-8 rounded-full flex items-center justify-center transition">◀</button>
+            <span className="font-semibold text-lg flex-1 text-center">{MONTHS[nav.month]} {nav.year}</span>
+            <button onClick={()=>changeNav(1)} className="bg-gray-600 hover:bg-gray-500 w-8 h-8 rounded-full flex items-center justify-center transition">▶</button>
+          </div>
+          <div className="mt-3">
+            <div className="flex justify-between text-xs opacity-70 mb-1"><span>Pagado: {fmt(grandPaid)}</span><span>{grandPct}%</span><span>Pendiente: {fmt(grandTotal-grandPaid)}</span></div>
+            <div className="w-full bg-gray-600 rounded-full h-2.5"><div className="bg-green-400 h-2.5 rounded-full" style={{width:`${grandPct}%`,transition:"width 0.5s"}}></div></div>
+            {projection&&<div className="text-xs opacity-50 mt-1">Proyección: {fmt(projection)}</div>}
+          </div>
+          <div className="flex gap-1.5 mt-3 flex-wrap">
+            {[["gastos","📝 Gastos"],["resumen","📊 Resumen"],["evolucion","📈 Evolución"],["buscar","🔍 Buscar"]].map(([v,l])=>(<button key={v} onClick={()=>setView(v)} className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${view===v?"bg-white text-gray-800":"bg-gray-600 hover:bg-gray-500 text-white"}`}>{l}</button>))}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-2xl mx-auto px-3 py-4 space-y-4">
+        {view==="gastos"&&urgentItems.length>0&&(
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-3">
+            <div className="text-sm font-bold text-red-700 mb-2">⚠️ Próximos a vencer</div>
+            {urgentItems.map(it=>{ const badge=dueBadge(it.dueDate,false); return(<div key={it.id} className="flex items-center justify-between text-sm py-1"><span>{it.secIcon} {it.name}</span><div className="flex items-center gap-2">{it.amount&&<span className="font-medium">{fmt(parseFloat(it.amount))}</span>}{badge&&<span className={`text-xs px-2 py-0.5 rounded-full ${badge.cls}`}>{badge.label}</span>}</div></div>); })}
+          </div>
+        )}
+
+        {view==="gastos"&&SECTIONS.map(sec=>{
+          const c=COLOR[sec.color]; const items=sortByDue(getItems(sec.id));
+          const total=sectionTotal(sec.id); const paid=sectionPaid(sec.id);
+          const pendingCount=sectionPending(sec.id); const pct=total>0?Math.round((paid/total)*100):0;
+          const ni=newItem[sec.id]||{}; const isCollapsed=collapsed[sec.id]; const bs=budgetStatus(sec.id);
+          return (
+            <div key={sec.id} className={`rounded-2xl overflow-hidden shadow-sm border ${c.border}`}>
+              <button onClick={()=>toggleCollapse(sec.id)} className={`${c.head} text-white w-full px-4 py-3 flex items-center gap-3 text-left`}>
+                <span className="text-xl">{sec.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm">{sec.label}</div>
+                  <div className="text-xs opacity-80 mt-0.5">{pendingCount>0?`${pendingCount} pendiente${pendingCount>1?"s":""} · `:""}{fmt(paid)} / {fmt(total)}</div>
+                  {bs&&<div className={`text-xs mt-0.5 ${bs.over?"text-red-200":"text-green-200"}`}>{bs.over?"⚠️ Excedido":"✓ En presupuesto"} ({bs.pct}%)</div>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="text-right"><div className="text-xs opacity-70">{pct}%</div><div className="w-14 bg-white rounded-full h-1.5 mt-0.5" style={{opacity:0.3}}><div className="bg-white h-1.5 rounded-full" style={{width:`${pct}%`}}></div></div></div>
+                  <span className="opacity-70 text-sm">{isCollapsed?"▼":"▲"}</span>
+                </div>
+              </button>
+              {!isCollapsed&&(
+                <div className={`${c.bg} p-3 space-y-2`}>
+                  <div className="flex items-center gap-2 px-1 pb-1 border-b border-gray-200">
+                    <span className="text-xs text-gray-400">🎯 Presupuesto:</span>
+                    {editBudget===sec.id?<input autoFocus type="number" defaultValue={getBudget(sec.id)||""} onBlur={e=>{setBudget(sec.id,e.target.value);setEditBudget(null);}} className="w-28 text-xs border rounded px-2 py-0.5 focus:outline-none"/>:<button onClick={()=>setEditBudget(sec.id)} className="text-xs text-gray-500 underline">{getBudget(sec.id)?fmt(getBudget(sec.id)):"Definir presupuesto"}</button>}
+                    {bs&&<div className="ml-auto"><span className={`text-xs px-2 py-0.5 rounded-full ${bs.over?"bg-red-100 text-red-600":"bg-green-100 text-green-600"}`}>{bs.over?`+${fmtK(bs.t-bs.b)} excedido`:`${fmtK(bs.b-bs.t)} disponible`}</span></div>}
+                  </div>
+                  {items.length===0&&<p className="text-center text-xs text-gray-400 italic py-2">Sin ítems.</p>}
+                  {items.map(it=>{
+                    const badge=dueBadge(it.dueDate,it.paid); const isExp=expandedItem===it.id;
+                    const uk=`${sec.id}_${it.id}`; const isUploading=uploading[uk];
+                    return (
+                      <div key={it.id} className={`bg-white rounded-xl border ${it.paid?"border-green-200":c.border}`}>
+                        <div className="px-3 py-2.5 flex flex-wrap items-center gap-2">
+                          <button onClick={()=>togglePaid(sec.id,it.id)} className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-sm font-bold flex-shrink-0 ${it.paid?"bg-green-500 border-green-500 text-white":"border-gray-300"}`}>{it.paid?"✓":""}</button>
+                          <span className={`flex-1 min-w-20 text-sm font-medium ${it.paid?"line-through text-gray-400":"text-gray-700"}`}>{it.name}</span>
+                          <div className="flex items-center gap-1"><span className="text-gray-400 text-xs">$</span><input type="number" value={it.amount} onChange={e=>updateField(sec.id,it.id,"amount",e.target.value)} placeholder="0" className={`w-24 border rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 ${c.ring}`}/></div>
+                          <button onClick={()=>toggleRecurring(sec.id,it.id)} className={`text-xs px-2 py-0.5 rounded-full border font-medium ${it.recurring?c.badge+" border-transparent":"bg-gray-100 text-gray-400 border-gray-200"}`}>{it.recurring?"🔁":"1×"}</button>
+                          <button onClick={()=>toggleExpand(it.id)} className={`text-sm ${isExp?"text-gray-600":"text-gray-300"}`}>⚙️</button>
+                          <button onClick={()=>deleteItem(sec.id,it.id)} className="text-gray-300 hover:text-red-400 text-xl leading-none">×</button>
+                        </div>
+                        <div className="px-3 pb-1.5 flex items-center gap-2 flex-wrap ml-9">
+                          <span className="text-xs text-gray-400">📅</span>
+                          <input type="date" value={it.dueDate||""} onChange={e=>updateField(sec.id,it.id,"dueDate",e.target.value)} className="text-xs border rounded-lg px-2 py-0.5 focus:outline-none"/>
+                          {badge&&<span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badge.cls}`}>{badge.label}</span>}
+                        </div>
+                        {it.paid&&(
+                          <div className={`mx-3 mb-2.5 rounded-xl border-2 border-dashed ${it.receiptUrl?"border-green-300 bg-green-50":"border-gray-200 bg-gray-50"} p-2.5`}>
+                            {it.receiptUrl?(
+                              <div className="flex items-center gap-2">
+                                <span className="text-green-500 text-lg">🧾</span>
+                                <div className="flex-1 min-w-0"><div className="text-xs font-medium text-green-700">Factura en Drive</div><div className="text-xs text-gray-400 truncate">{it.receiptName}</div></div>
+                                <a href={it.receiptUrl} target="_blank" rel="noreferrer" className="text-xs bg-green-600 text-white px-2 py-1 rounded-lg">Ver 📂</a>
+                                <label className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-lg cursor-pointer">Reemplazar<input type="file" accept="image/*,application/pdf" className="hidden" onChange={e=>e.target.files[0]&&handleReceiptUpload(sec.id,it.id,it.name,sec.label,e.target.files[0])}/></label>
+                              </div>
+                            ):(
+                              <label className={`flex items-center gap-2 cursor-pointer ${isUploading?"opacity-50 pointer-events-none":""}`}>
+                                <span className="text-2xl">{isUploading?"⏳":"📎"}</span>
+                                <div className="flex-1"><div className="text-xs font-semibold text-gray-600">{isUploading?"Subiendo...":"Adjuntar factura pagada"}</div><div className="text-xs text-gray-400">Foto, captura o PDF → Drive</div></div>
+                                {!isUploading&&<span className="text-xs bg-gray-700 text-white px-3 py-1.5 rounded-lg">📤 Subir</span>}
+                                <input type="file" accept="image/*,application/pdf" capture="environment" className="hidden" onChange={e=>e.target.files[0]&&handleReceiptUpload(sec.id,it.id,it.name,sec.label,e.target.files[0])}/>
+                              </label>
+                            )}
+                          </div>
+                        )}
+                        {isExp&&(
+                          <div className="px-3 pb-3 ml-9 space-y-2 border-t border-gray-100 pt-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div><div className="text-xs text-gray-400 mb-0.5">Forma de pago</div><select value={it.payMethod||"—"} onChange={e=>updateField(sec.id,it.id,"payMethod",e.target.value)} className="w-full text-xs border rounded-lg px-2 py-1">{PAYMENT_METHODS.map(m=><option key={m}>{m}</option>)}</select></div>
+                              <div><div className="text-xs text-gray-400 mb-0.5">Cuotas</div><input type="number" value={it.installments||""} onChange={e=>updateField(sec.id,it.id,"installments",e.target.value)} placeholder="ej: 3" className="w-full text-xs border rounded-lg px-2 py-1"/></div>
+                              <div><div className="text-xs text-gray-400 mb-0.5">Proveedor</div><input type="text" value={it.provider||""} onChange={e=>updateField(sec.id,it.id,"provider",e.target.value)} placeholder="UTE, OSE..." className="w-full text-xs border rounded-lg px-2 py-1"/></div>
+                              <div><div className="text-xs text-gray-400 mb-0.5">Nº factura</div><input type="text" value={it.invoiceNum||""} onChange={e=>updateField(sec.id,it.id,"invoiceNum",e.target.value)} placeholder="00123456" className="w-full text-xs border rounded-lg px-2 py-1"/></div>
+                            </div>
+                            <div><div className="text-xs text-gray-400 mb-0.5">📝 Nota</div><input type="text" value={it.note||""} onChange={e=>updateField(sec.id,it.id,"note",e.target.value)} placeholder="Nota libre..." className="w-full text-xs border rounded-lg px-2 py-1 bg-yellow-50"/></div>
+                            <div>
+                              <div className="text-xs text-gray-400 mb-0.5">División: Gonzalo {it.splitPct||50}% / Andrea {100-(it.splitPct||50)}%</div>
+                              <input type="range" min="0" max="100" value={it.splitPct||50} onChange={e=>updateField(sec.id,it.id,"splitPct",parseInt(e.target.value))} className="w-full"/>
+                              <div className="flex justify-between text-xs text-gray-400 mt-0.5"><span>G: {fmt((parseFloat(it.amount)||0)*(it.splitPct||50)/100)}</span><span>A: {fmt((parseFloat(it.amount)||0)*(100-(it.splitPct||50))/100)}</span></div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div className={`bg-white rounded-xl border border-dashed ${c.border} p-3 space-y-2`}>
+                    <div className="text-xs text-gray-400 font-medium">➕ Nuevo ítem</div>
+                    <div className="flex flex-wrap gap-2">
+                      <input type="text" value={ni.name||""} onChange={e=>setNewItem(p=>({...p,[sec.id]:{...p[sec.id],name:e.target.value}}))} placeholder="Nombre..." onKeyDown={e=>e.key==="Enter"&&addItem(sec.id)} className="flex-1 min-w-36 text-sm border rounded-lg px-2 py-1.5 text-gray-700"/>
+                      <div className="flex items-center gap-1"><span className="text-gray-400 text-sm">$</span><input type="number" value={ni.amount||""} onChange={e=>setNewItem(p=>({...p,[sec.id]:{...p[sec.id],amount:e.target.value}}))} placeholder="0" className="w-24 border rounded-lg px-2 py-1.5 text-sm text-right"/></div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1"><span className="text-xs text-gray-400">📅</span><input type="date" value={ni.dueDate||""} onChange={e=>setNewItem(p=>({...p,[sec.id]:{...p[sec.id],dueDate:e.target.value}}))} className="text-xs border rounded-lg px-2 py-1"/></div>
+                      <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer"><input type="checkbox" checked={ni.recurring||false} onChange={e=>setNewItem(p=>({...p,[sec.id]:{...p[sec.id],recurring:e.target.checked}}))}/>🔁 Mensual</label>
+                      <div className="flex gap-2 ml-auto">
+                        <button onClick={()=>copyFromPrevMonth(sec.id)} className="text-xs px-2 py-1 rounded-lg border border-gray-200 text-gray-500">📋 Mes ant.</button>
+                        <button onClick={()=>addItem(sec.id)} className={`${c.btn} text-white text-xs px-3 py-1 rounded-lg font-medium`}>Agregar</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {view==="resumen"&&(
+          <div className="space-y-4">
+            <div className="bg-gray-800 text-white rounded-2xl p-5 shadow">
+              <div className="text-sm opacity-60 mb-1">{monthLabel}</div>
+              <div className="text-4xl font-bold">{fmt(grandTotal)}</div>
+              {projection&&<div className="text-xs opacity-50 mt-1">Proyección: {fmt(projection)}</div>}
+              <div className="mt-4"><div className="flex justify-between text-xs opacity-70 mb-1"><span>Pagado {fmt(grandPaid)}</span><span>{grandPct}%</span></div><div className="w-full bg-gray-600 rounded-full h-3"><div className="bg-green-400 h-3 rounded-full" style={{width:`${grandPct}%`}}></div></div><div className="text-xs opacity-60 mt-1">Pendiente {fmt(grandTotal-grandPaid)}</div></div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+              <div className="font-bold text-gray-700 mb-3">👥 División familiar</div>
+              <div className="grid grid-cols-2 gap-3">
+                {[["Gonzalo","purple",gonzaloGrand],["Andrea","pink",andreaGrand]].map(([name,col,val])=>(<div key={name} className={`${COLOR[col].bg} rounded-xl p-3 border ${COLOR[col].border}`}><div className="text-xs font-semibold mb-1">👤 {name}</div><div className="text-lg font-bold text-gray-800">{fmt(val)}</div><div className="text-xs text-gray-500">{grandTotal>0?Math.round((val/grandTotal)*100):0}% del total</div></div>))}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+              <div className="font-bold text-gray-700 mb-3">🥧 Distribución</div>
+              <div className="flex gap-4 items-center flex-wrap"><PieChart data={pieData} size={150}/><div className="flex-1 space-y-1.5">{pieData.map(d=>(<div key={d.label} className="flex items-center gap-2 text-xs"><div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:d.color}}></div><span className="text-gray-600 flex-1">{d.icon} {d.label}</span><span className="font-semibold">{fmtK(d.value)}</span><span className="text-gray-400">{grandTotal>0?Math.round((d.value/grandTotal)*100):0}%</span></div>))}</div></div>
+            </div>
+            {SECTIONS.map(sec=>{ const c=COLOR[sec.color]; const items=sortByDue(getItems(sec.id)); const total=sectionTotal(sec.id); const paid=sectionPaid(sec.id); const pct=total>0?Math.round((paid/total)*100):0; const bs=budgetStatus(sec.id); const pending=items.filter(it=>!it.paid); const paidItems=items.filter(it=>it.paid);
+              return(<div key={sec.id} className={`rounded-2xl overflow-hidden shadow-sm border ${c.border}`}><div className={`${c.head} text-white px-4 py-3`}><div className="flex justify-between items-center"><span className="font-bold">{sec.icon} {sec.label}</span><span className="font-bold text-lg">{fmt(total)}</span></div>{bs&&<div className={`text-xs mt-0.5 ${bs.over?"text-red-200":"text-green-200"}`}>{bs.over?`⚠️ +${fmtK(bs.t-bs.b)}`:`✓ ${fmtK(bs.b-bs.t)} disp.`}</div>}<div className="mt-2"><div className="w-full rounded-full h-2" style={{background:"rgba(255,255,255,0.3)"}}><div className="h-2 rounded-full bg-white" style={{width:`${pct}%`}}></div></div><div className="flex justify-between text-xs opacity-80 mt-1"><span>✅ {fmt(paid)}</span><span>{pct}%</span><span>⏳ {fmt(total-paid)}</span></div></div></div>
+              <div className={`${c.bg} px-4 py-3`}>{pending.length>0&&<div className="mb-2"><div className="text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">⏳ Pendientes</div>{pending.map(it=>{ const badge=dueBadge(it.dueDate,false); return(<div key={it.id} className="flex justify-between items-start text-sm py-1 border-b border-gray-100 last:border-0"><div><div className="text-gray-700">{it.name}</div>{it.note&&<div className="text-xs text-yellow-600">📝 {it.note}</div>}{badge&&<span className={`text-xs px-1.5 py-0.5 rounded-full inline-block mt-0.5 ${badge.cls}`}>{badge.label}</span>}</div><span className="font-semibold ml-2 flex-shrink-0">{it.amount?fmt(parseFloat(it.amount)):"—"}</span></div>); })}</div>}
+              {paidItems.length>0&&<div><div className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wide">✅ Pagados</div>{paidItems.map(it=>(<div key={it.id} className="flex justify-between items-center text-sm py-0.5 text-gray-400"><div className="flex items-center gap-1.5"><span className="line-through">{it.name}</span>{it.receiptUrl&&<a href={it.receiptUrl} target="_blank" rel="noreferrer" className="text-green-500">🧾</a>}</div><span>{it.amount?fmt(parseFloat(it.amount)):"—"}</span></div>))}</div>}
+              {items.length===0&&<p className="text-xs text-gray-400 italic text-center">Sin ítems.</p>}</div></div>); })}
+          </div>
+        )}
+
+        {view==="evolucion"&&(
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between mb-1"><h2 className="font-bold text-gray-700">📈 Evolución mensual</h2><div className="flex gap-1">{[3,6,12].map(n=>(<button key={n} onClick={()=>setTrendMonths(n)} className={`text-xs px-2 py-1 rounded-lg ${trendMonths===n?"bg-gray-800 text-white":"bg-gray-100 text-gray-500"}`}>{n}m</button>))}</div></div>
+              <div className="flex items-end gap-2 mt-4" style={{height:160}}>{trendData.map(d=>{ const h=maxTrend>0?Math.round((d.total/maxTrend)*100):0; const isCurrent=d.key===key; return(<div key={d.key} className="flex-1 flex flex-col items-center gap-1"><div className="text-xs text-gray-500">{d.total>0?fmtK(d.total):""}</div><div className="w-full flex flex-col justify-end" style={{height:120}}><div className={`w-full rounded-t-lg ${isCurrent?"bg-gray-800":"bg-blue-400"}`} style={{height:`${h}%`,minHeight:d.total>0?4:0}}></div></div><div className={`text-xs font-medium ${isCurrent?"text-gray-800":"text-gray-400"}`}>{d.label}</div></div>); })}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100"><h3 className="font-bold text-gray-700">📋 Tabla comparativa</h3></div>
+              <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="bg-gray-50"><th className="text-left px-3 py-2 text-gray-500 whitespace-nowrap">Sección</th>{trendData.map(d=>(<th key={d.key} className={`px-2 py-2 text-center ${d.key===key?"text-gray-800 bg-blue-50":"text-gray-400"}`}>{d.label}<br/><span className="opacity-60">{d.year}</span></th>))}</tr></thead>
+              <tbody>{SECTIONS.map(sec=>{ const vals=trendData.map(d=>d.bySection[sec.id]||0); if(!vals.some(v=>v>0)) return null; return(<tr key={sec.id} className="border-t border-gray-50 hover:bg-gray-50"><td className="px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{sec.icon} {sec.label}</td>{trendData.map((d,i)=>{ const val=d.bySection[sec.id]||0; const prev=i>0?(trendData[i-1].bySection[sec.id]||0):null; const diff=prev!==null&&prev>0?Math.round(((val-prev)/prev)*100):null; return(<td key={d.key} className={`px-2 py-2 text-center ${d.key===key?"bg-blue-50 font-semibold":""}`}><div>{val>0?fmtK(val):"—"}</div>{diff!==null&&val>0&&<div className={`text-xs ${diff>10?"text-red-500":diff<-10?"text-green-500":"text-gray-400"}`}>{diff>0?`▲${diff}%`:diff<0?`▼${Math.abs(diff)}%`:"="}</div>}</td>); })}</tr>); })}
+              <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold"><td className="px-3 py-2 text-gray-700">💰 TOTAL</td>{trendData.map((d,i)=>{ const prev=i>0?trendData[i-1].total:null; const diff=prev&&prev>0?Math.round(((d.total-prev)/prev)*100):null; return(<td key={d.key} className={`px-2 py-2 text-center ${d.key===key?"bg-blue-100":""}`}><div>{d.total>0?fmtK(d.total):"—"}</div>{diff!==null&&d.total>0&&<div className={`text-xs font-normal ${diff>10?"text-red-500":diff<-10?"text-green-500":"text-gray-400"}`}>{diff>0?`▲${diff}%`:diff<0?`▼${Math.abs(diff)}%`:"="}</div>}</td>); })}</tr></tbody></table></div>
+            </div>
+          </div>
+        )}
+
+        {view==="buscar"&&(
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+              <h2 className="font-bold text-gray-700 mb-3">🔍 Buscar en todos los meses</h2>
+              <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Nombre, proveedor, nota..." className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none"/>
+            </div>
+            {search.trim()&&<div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"><div className="px-4 py-3 border-b border-gray-100 text-sm text-gray-500">{searchResults.length} resultado{searchResults.length!==1?"s":""}</div>{searchResults.length===0&&<p className="text-center text-xs text-gray-400 italic py-6">Sin resultados.</p>}{searchResults.map((it,i)=>{ const sec=SECTIONS.find(s=>it.id.startsWith(s.id)); const c=sec?COLOR[sec.color]:COLOR.blue; return(<div key={i} className="px-4 py-3 border-b border-gray-50 last:border-0 flex justify-between items-start hover:bg-gray-50"><div><div className="flex items-center gap-2 mb-0.5"><span className={`text-xs px-1.5 py-0.5 rounded-full ${c.badge}`}>{it.secIcon} {it.secLabel}</span><span className="text-xs text-gray-400">{it.monthLabel}</span></div><div className={`text-sm font-medium ${it.paid?"line-through text-gray-400":"text-gray-700"}`}>{it.name}</div>{it.note&&<div className="text-xs text-yellow-600">📝 {it.note}</div>}{it.receiptUrl&&<a href={it.receiptUrl} target="_blank" rel="noreferrer" className="text-xs text-green-600">🧾 Ver factura</a>}</div><div className="text-right ml-3"><div className="font-semibold text-gray-700">{it.amount?fmt(parseFloat(it.amount)):"—"}</div><div className={`text-xs mt-0.5 ${it.paid?"text-green-500":"text-orange-500"}`}>{it.paid?"✅":"⏳"}</div></div></div>); })}</div>}
+            {!search.trim()&&<div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 text-center"><div className="text-4xl mb-2">🔍</div><div className="text-sm text-gray-400">Escribí para buscar en todos los meses.</div></div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
 </html>
